@@ -1,4 +1,4 @@
-# 1. 項目初始化
+# 1. 後台管理系統項目初始化
 
 ## 1. 資料庫初始化
 
@@ -82,6 +82,8 @@ web module maven dependency:
 ```
 
 ## 3. 後臺管理系統項目初始化配置
+
+當 1~5 都配置完後，即可啟動項目並訪問 Knife4j API 文件，URL為`http://localhost:8080/doc.html`。
 
 ### 1. Spring-Boot 配置
 
@@ -602,3 +604,10 @@ order.setStatus(Status.WAIT_PAY);
 |controller|web-admin|com.atguigu.lease.web.admin.controller|無|
 |vo|web-admin|com.atguigu.lease.web.admin.vo|用於封裝要從前端接受或 return 給前端的數據|
 |result|common|com.atguigu.lease.common.result|統一定義 return 給前端的數據格式|
+
+#### 疑問
+
+這裡 return 給前端的數據是直接 `return Result`，而直接不使用 `ResponseEntity`，不太瞭解這兩種做法的差異與優缺。
+
+# 2. 後台管理系統項目開發
+

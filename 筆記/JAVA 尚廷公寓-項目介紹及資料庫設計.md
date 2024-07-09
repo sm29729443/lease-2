@@ -1,5 +1,6 @@
 ---
     學習資源:B站尚硅谷
+    連接:https://www.bilibili.com/video/BV1At421K7gP/?p=1&spm_id_from=pageDriver&vd_source=761768e2c11632de30fd3e6fab20e591
 ---
 # JAVA 尚廷公寓-項目介紹及資料庫設計
 
