@@ -611,3 +611,123 @@ order.setStatus(Status.WAIT_PAY);
 
 # 2. 後台管理系統項目開發
 
+## 1. 公寓信息管理
+
+### 1. 房間支付方式管理
+
+主要實現的是下圖的功能，需要實現的 API 有:
+
+- 查詢全部支付方式
+- 保存或更新支付方式
+- 根據 ID 刪除支付方式
+
+<img src="img/Snipaste_2024-07-09_15-18-59.jpg" alt="error" style="width:50%"/>
+
+對應的 Controller 為:
+
+具體的實現邏輯看 github 程式碼。
+
+```java
+package com.atguigu.lease.web.admin.controller.apartment;
+@Tag(name = "支付方式管理")
+@RequestMapping("/admin/payment")
+@RestController
+public class PaymentTypeController {
+}
+```
+
+#### 1. 配置邏輯刪除
+
+**邏輯刪除功能只對MyBatis-Plus 提供的通用 Service、Mapper 有效，若是手動配置在 Mapper.xml 的 SQL 是不受影響的。**
+
+邏輯刪除的功能如下:
+
+- 將 DELETE SQL 改為 UPDATE SQL。
+
+- 為所有的 SELECT SQL 都自動增加 `is_deleted = 0`的過濾條件。
+
+配置步驟:
+
+##### Step 1 `application.yml`配置
+
+```yml
+mybatis-plus:
+  global-config:
+    db-config:
+      logic-delete-field: is_deleted # 全域邏輯刪除的判斷字段名(配置後可忽略 Step.2)，指的是 Table 裡的字段名
+      logic-delete-value: 1 # 邏輯已刪除值(default 1)
+      logic-not-delete-value: 0 # 邏輯未刪除值(default 0)
+```
+
+##### Step 2 指定用來判斷邏輯刪除的字段名
+
+在 `BaseEntity` 中添加`@TableLogic`
+
+```java
+    @TableLogic
+    private Byte isDeleted;
+```
+
+如此一來，由 Mybaits-Plus 自動注入的 SQL 就會實現邏輯刪除功能。
+
+#### 2. 使用`@JsonIngore`忽略某些字段不 return 給前端
+
+若是希望某些字段不要 return 給前端，可以在字段上使用`@JsonIgnore`，這會使得物件在序列化成 JSON 物件時，忽略這些帶有`@JsonIgnore`的字段。
+
+通常情況下，`create_time`、`update_time`、`is_deleted`是不需要 return 給前端的，所以這裡都加上去了。
+
+#### 3. 配置 Mybatis-Plus 自動填充及`is_deleted` default value
+
+當使用以下 API 時，會發現資料庫的`create_time`、`update_time`、`is_deleted`都是null，因此需要為他們配置默認值，而對於`is_deleted`這種字段，只要在 SQL 中為它配置默認值即可:`ALTER TABLE payment_type ALTER COLUMN is_deleted SET DEFAULT 0;`。
+
+```java
+    @Operation(summary = "保存或更新支付方式")
+    @PostMapping("saveOrUpdate")
+    public Result saveOrUpdatePaymentType(@RequestBody PaymentType paymentType) {
+        paymentTypeService.saveOrUpdate(paymentType);
+        return Result.ok();
+    }
+```
+
+而對於`create_time`、`update_time`這種變化的字段，則需要使用 Mybatis-Plus 的自動填充功能。
+
+自動填充功能，可以在插入某些字段時，為這些字段賦值。
+
+##### Step. 1 配置自動填充的配置類
+
+```java
+package com.atguigu.lease.common.mybatisplus;
+
+import com.baomidou.mybatisplus.core.handlers.MetaObjectHandler;
+import org.apache.ibatis.reflection.MetaObject;
+import org.springframework.stereotype.Component;
+
+import java.util.Date;
+
+@Component
+public class MybatisMetaObjectHandler implements MetaObjectHandler {
+    @Override
+    public void insertFill(MetaObject metaObject) {
+        this.strictInsertFill(metaObject, "createTime", Date.class, new Date());
+    }
+
+    @Override
+    public void updateFill(MetaObject metaObject) {
+        this.strictUpdateFill(metaObject, "updateTime", Date.class, new Date());
+    }
+}
+```
+
+##### Step.2 在 BaseEntity 為需要自動填充的字段配置觸發時機
+
+透過`@TableField()`的`fill`屬性指定要填充的觸發時機
+
+```java
+    @Schema(description = "创建时间")
+    @TableField(value = "create_time", fill = FieldFill.INSERT)
+    private Date createTime;
+
+    @Schema(description = "更新时间")
+    @TableField(value = "create_time", fill = FieldFill.UPDATE)
+    private Date updateTime;
+```
