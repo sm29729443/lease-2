@@ -534,3 +534,71 @@ public class Knife4jConfiguration {
 |mapper xml      |web-admin|src/resources/mapper                    |無                             |
 |service         |web-admin|com.atguigu.lease.web.admin.service     |無                             |
 |serviceImpl     |web-admin|com.atguigu.lease.web.admin.service.impl|無                             |
+
+#### 補充
+
+- Entity 中的所有公共字段(id、create_time、update、is_deleted)抽取到一個 BaseEntity 中方便管理，然後讓所有 Entity 繼承 BaseEntity。
+- 所有 Entity 均實現`Serializable`，因為此項目有使用到 redis，需要把物件寫入到 memory。
+- 所有的 mapper 均是使用`@MapperScan`進行掃描。
+- Table 中的狀態、類型字段，像是 status、type 均是以 INT 儲存的，而在 JAVA entity 中則是用 enums 表示。
+
+若是在 JAVA 中也用 INT 去表示狀態，那程式碼就會是這樣:
+
+```java
+if(order.getStatus() == 1){
+        // 業務邏輯
+}
+```
+
+這樣的表示法可讀性差，維護時會很不方便，因此應該以 enums 去取代這種寫法
+
+1. 編寫一個 enums class
+
+```java
+public enum Status {
+
+CANCEL(0, "已取消"),
+WAIT_PAY(1, "待支付"),
+// 僅是示範不寫太多
+
+private final Integer value;
+private final String desc;
+
+public Integer value() {
+  return value;
+}
+public String desc() {
+  return desc;
+}
+}
+```
+
+2. 將 status 定義成 `Status` 類型
+
+```java
+@Data
+public class Order{
+ private Integer id;
+ private Integer userId;
+ private Status status;
+ ...
+}
+```
+
+如此程式碼就會變成以下，可讀性較好
+
+```java
+order.setStatus(Status.WAIT_PAY);
+```
+
+### 5. 導入 Controller 相關程式碼
+
+與上節差不多，教學提供了定義好 Method 但還沒編寫業務邏輯的 Controller。
+
+需要導入的有:
+
+|要導入的文件|module|package or path|description|
+|-----------|------|---------------|-----------|
+|controller|web-admin|com.atguigu.lease.web.admin.controller|無|
+|vo|web-admin|com.atguigu.lease.web.admin.vo|用於封裝要從前端接受或 return 給前端的數據|
+|result|common|com.atguigu.lease.common.result|統一定義 return 給前端的數據格式|
