@@ -1,0 +1,24 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    type: com.zaxxer.hikari.HikariDataSource
+    url: jdbc:mysql://192.168.246.100:3306/lease?useUnicode=true&characterEncoding=utf-8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=GMT%2b8
+    username: root
+    password: Atguigu.123
+    hikari:
+      # 會根據所配置的查詢語句去檢查連接是否正常，譬如這裡連接時會去執行 SELECT 1，若查詢成功，
+      # 代表這次連接沒有問題
+      connection-test-query: SELECT 1
+      connection-timeout: 60000 #資料庫連接超時時間，默認 30s，這裡配置的單位是 ms
+      idle-timeout: 500000 #連接池裡的空閒連接存活時間，默認 60m，配置單位 ms，若超過此時間，則連接關閉
+      max-lifetime: 540000 #連接池裡的連接的最大存活時間，若超出設置時間，則此連接會被銷毀，並創立一個新連接，值0表示無限生命週期
+      maximum-pool-size: 12 #連接池的最大連接數量，默認 10
+      minimum-idle: 10 #最小空閒連接數，也就是連接池中隨時都備者10個連接供使用
+      pool-name: SPHHikariPool # 連接池名稱
+
+#打印 sql 語句的配置
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
