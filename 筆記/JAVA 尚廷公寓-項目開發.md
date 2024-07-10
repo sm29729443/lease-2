@@ -617,9 +617,9 @@ order.setStatus(Status.WAIT_PAY);
 
 主要實現的是下圖的功能，需要實現的 API 有:
 
-- 查詢全部支付方式
-- 保存或更新支付方式
-- 根據 ID 刪除支付方式
+- 查詢全部支付方式(`/admin/payment/list`)
+- 保存或更新支付方式(`/admin/payment/saveOrUpdate`)
+- 根據 ID 刪除支付方式(`/admin/payment/deleteById`)
 
 <img src="img/Snipaste_2024-07-09_15-18-59.jpg" alt="error" style="width:50%"/>
 
@@ -731,3 +731,240 @@ public class MybatisMetaObjectHandler implements MetaObjectHandler {
     @TableField(value = "create_time", fill = FieldFill.UPDATE)
     private Date updateTime;
 ```
+
+### 2. 房間租期管理
+
+實現的是下圖功能:
+
+<img src="img/Snipaste_2024-07-09_16-33-44.jpg" alt="error" style="width:50%"/>
+
+API 有:
+
+- 查詢全部租期列表(`/admin/term/list`)
+- 保存或更新租期信息(`/admin/term/saveOrUpdate`)
+- 根據 ID 刪除租期(`/admin/term/deleteById`)
+
+這邊的 API 沒什麼需要注意的地方。
+
+### 3. 標籤管理
+
+實現的是下圖功能:
+
+<img src="img/Snipaste_2024-07-09_16-41-02.jpg" alt="error" style="width:50%"/>
+
+API 有:
+
+- （根據類型）查詢標籤列表(`/admin/label/list`)
+- 新增或修改標籤信息(`/admin/label/saveOrUpdate`)
+- 根據 ID 刪除標籤訊息(`/admin/label/deleteById`)
+
+#### 1. 調用`/admin/label/list`時的資料類型轉換失敗問題
+
+當調用此 API 時，會報錯，錯誤訊息表示從 `String` Converter To `ItemType`時失敗，為了瞭解此問題的產生及解決方法，因此要先介紹`type`這個 parameter 所涉及的資料類型轉換流程。
+
+```java
+    @Operation(summary = "（根據類型）查詢標籤列表")
+    @GetMapping("list")
+    public Result<List<LabelInfo>> labelList(@RequestParam(required = false) ItemType type) {
+        LambdaQueryWrapper<LabelInfo> labelInfoLambdaQueryWrapper = new LambdaQueryWrapper<>();
+        labelInfoLambdaQueryWrapper.eq(type !=null, LabelInfo::getType, type.getCode());
+        List<LabelInfo> list = labelInfoService.list(labelInfoLambdaQueryWrapper);
+        return Result.ok(list);
+    }
+```
+
+```shell
+WARN 3584 --- [nio-8081-exec-3] .w.s.m.s.DefaultHandlerExceptionResolver : Resolved [org.springframework.web.method.annotation.MethodArgumentTypeMismatchException: Failed to convert value of type 'java.lang.String' to required type 'com.atguigu.lease.model.enums.ItemType'; Failed to convert from type [java.lang.String] to type [@org.springframework.web.bind.annotation.RequestParam com.atguigu.lease.model.enums.ItemType] for value '1']
+```
+
+#### 2. parameter `type` 的資料類型轉換過程
+
+##### 1. 請求流程(request)
+
+<img src="img/Snipaste_2024-07-09_17-30-07.jpg" alt="error" style="width:70%"/>
+
+SpringMVC 的 `WebDataBinder` 會將 HTTP Request 的 Request Parameter 綁定到 Controller 方法上的參數，並且進行資料類型的轉換，**注意，不是只綁定到`@RequestParam`的參數上，就算是沒有註解的參數`WebDataBinder`也會嘗試綁定。**
+
+而`TypeHandler`則是處理 JAVA 與資料庫間的資料類型轉換，因此這裡會再將 `ItemType` Converter To INT。
+
+##### 2. 響應流程(response)
+
+同理，資料庫中的資料映射到 JAVA 物件時，資料類型的轉換也是由`TypeHandler`實現的，但須注意資料庫與 JAVA 物件的映射是由`mapper`做的。
+
+而將帶有`@RequestBody`的參數轉換成 JSON 字串則是由`HTTPMessageConverter`實現的。
+
+<img src="img/Snipaste_2024-07-09_17-46-29.jpg" alt="error" style="width:70%"/>
+
+#### `WebDataBinder`是如何實現資料類型轉換的?
+
+`WebDataBinder`在實現數據類型轉換時，實際上是依賴於`Converter`在實現的，spring MVC 提供了各種常用類型的 `Converter`，像是 `String` → `Integer`、`String` → `Date` 等等，而其中也提供了 `String` → `enum` 的轉換，但是提供的是根據`enum`物件名("APARTMENT") → `ItemType.APARTMENT` 這種方式，若想要根據 code 屬性 → `ItemType.APARTMENT` 的話，那需要自定義 `Converter`。
+
+[Converter 官方文檔](https://docs.spring.io/spring-framework/reference/core/validation/convert.html#core-convert-Converter-API)
+
+而具體的實現方式，總共有以下兩種。
+
+方式1:自定義`Converter`:
+
+##### Step. 1 自定義`Converter`
+
+```java
+package com.atguigu.lease.web.admin.custom.converter;
+@Component
+public class StringToItemTypeConverter implements Converter<String, ItemType> {
+    @Override
+    public ItemType convert(String code) {
+        ItemType[] values = ItemType.values();
+        for (ItemType itemType : values) {
+            if (itemType.getCode().equals(Integer.valueOf(code))) {
+                return itemType;
+            }
+        }
+        throw new IllegalArgumentException("code:" + code + "非法");
+    }
+}
+```
+
+##### Step. 2 註冊`Converter`
+
+```java
+package com.atguigu.lease.web.admin.custom.config;
+@Configuration
+public class WebMvcConfiguration implements WebMvcConfigurer {
+
+    @Autowired
+    private StringToItemTypeConverter stringToItemTypeConverter;
+
+    @Override
+    public void addFormatters(FormatterRegistry registry) {
+        registry.addConverter(this.stringToItemTypeConverter);
+    }
+}
+```
+
+方式2:自定義`ConverterFactory`:
+
+先前自定義`Converter`的方式，若是有多個轉換邏輯相同(譬如都是 code → enum)，那就需要為每個 enum 都實作一個 `Coverter`，很不方便，因此這裡介紹另一種實現的方式。
+
+首先，`ConverterFactory`可以將同一套轉換邏輯，應用到一個 `interface` 的所有實現類。
+
+##### Step.1 定義 interface `BaseEnum`
+
+```java
+public interface BaseEnum {
+    Integer getCode();
+    String getName();
+}
+```
+
+##### Step. 2 `implements ConverterFactory`
+
+轉換的邏輯在這邊寫
+
+```java
+@Component
+public class StringToBaseEnumConverterFactory implements ConverterFactory<String, BaseEnum> {
+    @Override
+    public <T extends BaseEnum> Converter<String, T> getConverter(Class<T> targetType) {
+        return new Converter<String, T>() {
+            @Override
+            public T convert(String source) {
+
+                for (T enumConstant : targetType.getEnumConstants()) {
+                    if (enumConstant.getCode().equals(Integer.valueOf(source))) {
+                        return enumConstant;
+                    }
+                }
+                throw new IllegalArgumentException("非法的枚舉值:" + source);
+            }
+        };
+    }
+}
+```
+
+#### `TypeHandler`的類型轉換
+
+`TypeHandler`默認也提供了許多類型轉換器，但關於 enum 的類型轉換，默認提供的也是`ItemType.APARTMENT` &lrarr; `"APARTMENT"`，因此若有客製化的需求，在 Mybatis 也需要自定義`TypeHandler`，而在 Mybatis-Plus 中則提供了`@EnumValue`來快速實現。
+
+透過在`IetmType`的`code`添加`@EnumValue`即可
+
+```java
+public enum ItemType implements BaseEnum {
+
+    APARTMENT(1, "公寓"),
+
+    ROOM(2, "房间");
+
+
+    @EnumValue
+    @JsonValue
+    private Integer code;
+    private String name;
+
+    @Override
+    public Integer getCode() {
+        return this.code;
+    }
+
+
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    ItemType(Integer code, String name) {
+        this.code = code;
+        this.name = name;
+    }
+
+}
+```
+
+#### `HTTPMessageConverter`的類型轉換
+
+與之前規則一樣，`HTTPMessageConverter`對於 JAVA 物件與 JSON 字串的轉換，默認也是 Instance &lrarr; Instance name 的方式，而若想客製化類型轉換，也只需要使用`@JsonValue`。
+
+透過在`code`新增`@JsonValue`。
+
+```java
+public enum ItemType implements BaseEnum {
+
+    APARTMENT(1, "公寓"),
+
+    ROOM(2, "房间");
+
+
+    @EnumValue
+    @JsonValue
+    private Integer code;
+    private String name;
+
+    @Override
+    public Integer getCode() {
+        return this.code;
+    }
+
+
+    @Override
+    public String getName() {
+        return name;
+    }
+
+    ItemType(Integer code, String name) {
+        this.code = code;
+        this.name = name;
+    }
+
+}
+```
+
+### 4. 配套管理
+
+實現的是下圖功能:
+
+<img src="img/Snipaste_2024-07-10_15-32-36.jpg" alt="error" style="width:50%"/>
+
+API 有:
+
+- [根據類型]查詢配套信息列表(`/admin/facility/list`)
+- 新增或修改配套信息(`/admin/facility/saveOrUpdate`)
+- 根據 ID 删除配套信息(`/admin/facility/deleteById`)
