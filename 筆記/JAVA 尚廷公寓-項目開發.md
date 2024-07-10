@@ -968,3 +968,7 @@ API 有:
 - [根據類型]查詢配套信息列表(`/admin/facility/list`)
 - 新增或修改配套信息(`/admin/facility/saveOrUpdate`)
 - 根據 ID 删除配套信息(`/admin/facility/deleteById`)
+
+這邊的 API 沒什麼需要注意的地方。
+
+### 5. 基本屬性管理
