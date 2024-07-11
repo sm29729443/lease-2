@@ -1092,5 +1092,72 @@ public class AttrValue extends BaseEntity {
         WHERE ak.is_deleted = 0
     </select>
 </mapper>
-
 ```
+
+### 6. 房間雜費管理
+
+實現的是下圖功能:
+
+可以看出「雜費名稱」與「雜費值」也會是多對多的關係，所以 Table 也是 3 張。
+
+在實作「查詢全部雜費名稱和雜費值列表(`/admin/fee/list`)」時也需要自己在`mapper.xml`寫 SQL，因為「基本屬性管理」那有記錄過了，這邊不再紀錄。
+
+<img src="img/Snipaste_2024-07-11_09-20-42.jpg" alt="error" style="width:50%"/>
+
+API 有:
+
+- 保存或更新雜費名稱(`/admin/fee/key/saveOrUpdate`)
+- 保存或更新雜費值(`/admin/fee/value/saveOrUpdate`)
+- 查詢全部雜費名稱和雜費值列表(`/admin/fee/list`)
+- 根據 ID 刪除雜費名稱(`/admin/fee/key/deleteById`)
+- 根據 ID 刪除雜費值(`/admin/fee/value/deleteById`)
+
+### 7. 地區信息管理
+
+這裡實現的是查詢省份、城市、區縣的 API，並不提供新增之類的操作，那是在建表時直接透過 SQL 完成的。
+
+API 有:
+
+- 查詢省份信息列表(`/admin/region/province/list`)
+- 根據省份 ID 查詢城市相關列表(`/admin/region/"city/listByProvinceId`)
+- 根據城市 ID 查詢區縣相關列表(`/admin/region/district/listByCityId`)
+
+看起來沒什麼要記錄的。
+
+### 8. 圖片上傳管理
+
+這邊主要介紹如何設定 minio 讓圖片儲存在 minio 裡。
+
+就只有一個上傳圖片的 API:
+
+MultipartFile 是 springMVC 提供一個用於接收上傳檔案的 Obj。
+
+這個 API 會將接收到的圖片儲存到 minio 後，return 圖片儲存的 url 給前端。
+
+```java
+@Tag(name = "文件管理")
+@RequestMapping("/admin/file")
+@RestController
+public class FileUploadController {
+
+    @Operation(summary = "上传文件")
+    @PostMapping("upload")
+    public Result<String> upload(@RequestParam MultipartFile file) {
+        return Result.ok();
+    }
+
+}
+```
+
+#### 1. minio 設定步驟
+
+1. 在 common module 導入 maven dependency
+
+```xml
+<dependency>
+    <groupId>io.minio</groupId>
+    <artifactId>minio</artifactId>
+</dependency>
+```
+
+1. 
