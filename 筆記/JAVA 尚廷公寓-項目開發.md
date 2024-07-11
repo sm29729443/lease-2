@@ -972,3 +972,125 @@ API 有:
 這邊的 API 沒什麼需要注意的地方。
 
 ### 5. 基本屬性管理
+
+實現的是下圖功能:
+
+<img src="img/Snipaste_2024-07-11_06-42-21.jpg" alt="error" style="width:50%"/>
+
+API 有:
+
+- 新增或更新屬性名稱(`/admin/attr/key/saveOrUpdate`)
+- 新增或更新屬性值(`/admin/attr/value/saveOrUpdate`)
+- 查詢全部屬性及其對應屬性值(`/admin/attr/list`)
+- 根據 ID 刪除屬性名稱(`/admin/attr/key/deleteById`)
+- 根據 ID 刪除屬性值(`/admin/attr/value/deleteById`)
+
+比較要注意的 API 是「查詢全部屬性及其對應屬性值(`/admin/attr/list`)」
+
+因為屬性及屬性值之間是多對多的關係，因此在 Table 的設計是三張表:
+
+<img src="img/Snipaste_2024-07-11_06-47-40.jpg" alt="error" style="75%"/>
+
+因此若想通過一條 SQL 把屬性及其對應屬性值給查詢出來的話，會需要使用到 JOIN 操作，而 Mybatis-Plus 提供的通用 Mapper、Service 並沒有對於多表查詢支持，因此需要自己寫 SQL。
+
+個人對於 Mybatis-Plus 的使用還是不太熟悉，所以這裡紀錄一下 Mybatis 要怎麼寫自訂的 SQL(**主要是紀錄 mapper.xml 如何編寫**)。
+
+#### mapper.xml
+
+首先這個 Method 要 `return` 的是一個 `List<AttrKeyVo>`
+
+```java
+public interface AttrKeyMapper extends BaseMapper<AttrKey> {
+
+    List<AttrKeyVo> listAttrInfo();
+}
+```
+
+`AttrKeyVo`:
+
+```java
+@Data
+public class AttrKeyVo extends AttrKey {
+
+    @Schema(description = "属性value列表")
+    private List<AttrValue> attrValueList;
+}
+```
+
+`AttrKey`:
+
+```java
+@Schema(description = "房间基本属性表")
+@TableName(value = "attr_key")
+@Data
+public class AttrKey extends BaseEntity {
+
+    private static final long serialVersionUID = 1L;
+
+    @Schema(description = "属性key")
+    @TableField(value = "name")
+    private String name;
+
+}
+```
+
+`AttrValue`:
+
+```java
+@Schema(description = "房间基本属性值表")
+@TableName(value = "attr_value")
+@Data
+public class AttrValue extends BaseEntity {
+
+    private static final long serialVersionUID = 1L;
+
+    @Schema(description = "属性value")
+    @TableField(value = "name")
+    private String name;
+
+    @Schema(description = "对应的属性key_id")
+    @TableField(value = "attr_key_id")
+    private Long attrKeyId;
+}
+```
+
+`AttrKeyMapper.xml`:
+
+當查詢結果不是對應到 Entity 而是對應到一個自製的 JAVA Object 時，就需要使用 resultMap 去客製化 SQL result columns 對應到 JAVA Object 的哪些 property。
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.atguigu.lease.web.admin.mapper.AttrKeyMapper">
+
+    <!-- 將 query result 映射到 JAVA Object 上    -->
+    <!-- 標籤裡的 column 指的是 query result 的 column name -->
+    <!-- 標籤裡的 property 指的是 JAVA Object 的屬性名 -->
+    <resultMap id="AttrKeyVoMap" type="com.atguigu.lease.web.admin.vo.attr.AttrKeyVo">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <collection property="attrValueList" ofType="com.atguigu.lease.model.entity.AttrValue">
+            <id property="id" column="attr_value_id"/>
+            <result property="name" column="attr_value_name"/>
+            <result property="attrKeyId" column="attr_key_id"/>
+        </collection>
+    </resultMap>
+
+    <select id="listAttrInfo" resultMap="AttrKeyVoMap">
+        SELECT ak.id          AS id,
+               ak.name        AS name,
+               av.id          AS attr_value_id,
+               av.name        AS attr_value_name,
+               av.attr_key_id AS attr_key_id,
+               ak.is_deleted
+        FROM attr_key AS ak
+                 LEFT JOIN attr_value AS av
+                           ON av.is_deleted = 0
+                               AND av.attr_key_id = ak.id
+        WHERE ak.is_deleted = 0
+    </select>
+</mapper>
+
+```
