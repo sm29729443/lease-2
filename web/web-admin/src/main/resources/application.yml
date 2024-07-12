@@ -26,3 +26,12 @@ mybatis-plus:
     db-config:
       logic-delete-value: 1 # 邏輯已刪除值(default 1)
       logic-not-delete-value: 0 # 邏輯未刪除值(default 0)
+
+minio:
+  endpoint: http://192.168.246.100:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket-name: lease
+
+springdoc:
+  default-flat-param-object: true

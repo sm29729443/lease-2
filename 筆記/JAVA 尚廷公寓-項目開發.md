@@ -1126,7 +1126,7 @@ API 有:
 
 ### 8. 圖片上傳管理
 
-這邊主要介紹如何設定 minio 讓圖片儲存在 minio 裡。
+這邊主要介紹如何設定 minio 讓圖片儲存在 minio 裡，**但還沒將 minio return 的 url 放到資料庫。**
 
 就只有一個上傳圖片的 API:
 
@@ -1140,7 +1140,7 @@ MultipartFile 是 springMVC 提供一個用於接收上傳檔案的 Obj。
 @RestController
 public class FileUploadController {
 
-    @Operation(summary = "上传文件")
+    @Operation(summary = "上傳文件")
     @PostMapping("upload")
     public Result<String> upload(@RequestParam MultipartFile file) {
         return Result.ok();
@@ -1149,7 +1149,7 @@ public class FileUploadController {
 }
 ```
 
-#### 1. minio 設定步驟
+#### 1. minio 配置
 
 1. 在 common module 導入 maven dependency
 
@@ -1160,4 +1160,184 @@ public class FileUploadController {
 </dependency>
 ```
 
-1. 
+2. 配置  minio 相關參數於`application.yml`
+
+```yml
+minio:
+  endpoint: http://<hostname>:<port>
+  access-key: <access-key>
+  secret-key: <secret-key>
+  bucket-name: <bucket-name>
+```
+
+3. 配置 `MinioProperties`
+
+```java
+@Data
+@ConfigurationProperties(prefix = "minio")
+public class MinioProperties {
+    private String endpoint;
+    private String accessKey;
+    private String secretKey;
+    private String bucket;
+}
+```
+
+4. 配置`MinioClient`且交由 spring 管理
+
+```java
+@Configuration
+@EnableConfigurationProperties(MinioProperties.class)
+public class MinioConfiguration {
+
+    @Autowired
+    private MinioProperties minioProperties;
+
+    @Bean
+    public MinioClient minioClient() {
+        return MinioClient.builder().endpoint(minioProperties.getEndpoint())
+                .credentials(minioProperties.getAccessKey(), minioProperties.getSecretKey())
+                .build();
+    }
+}
+```
+
+#### 2. 調用 `minioClient`
+
+當配置完 minio 後，即可調用`minioClient`。
+
+因為往 minio 存圖片的 code 滿制式化的，故只記錄程式碼，不做說明。
+
+FileUploadController:
+
+```java
+@Tag(name = "文件管理")
+@RequestMapping("/admin/file")
+@RestController
+public class FileUploadController {
+
+    @Autowired
+    private FileService fileService;
+
+    @Operation(summary = "上傳文件")
+    @PostMapping("upload")
+    public Result<String> upload(@RequestParam MultipartFile file) throws ServerException, InsufficientDataException, ErrorResponseException, IOException, NoSuchAlgorithmException, InvalidKeyException, InvalidResponseException, XmlParserException, InternalException {
+        String url = fileService.upload(file);
+        return Result.ok();
+    }
+
+}
+```
+
+FileServiceImpl:
+
+```java
+@Service
+public class FileServiceImpl implements FileService {
+
+    @Autowired
+    private MinioClient minioClient;
+    @Autowired
+    private MinioProperties minioProperties;
+
+    @Override
+    public String upload(MultipartFile file) throws ServerException, InsufficientDataException, ErrorResponseException, IOException, NoSuchAlgorithmException, InvalidKeyException, InvalidResponseException, XmlParserException, InternalException {
+        boolean bucketExists = minioClient.bucketExists(BucketExistsArgs.builder().bucket(minioProperties.getBucketName()).build());
+        if (!bucketExists) {
+            minioClient.makeBucket(MakeBucketArgs.builder().bucket(minioProperties.getBucketName()).build());
+            minioClient.setBucketPolicy(SetBucketPolicyArgs.builder().bucket(minioProperties.getBucketName())
+                    .config(createBucketPolicyConfig(minioProperties.getBucketName()))
+                    .build());
+        }
+        String filename = new SimpleDateFormat("yyyyMMdd").format(new Date()) + "/" + UUID.randomUUID() + "-" + file.getOriginalFilename();
+        minioClient.putObject(PutObjectArgs.builder().bucket(minioProperties.getBucketName())
+                .stream(file.getInputStream(), file.getSize(), -1).object(filename).contentType(file.getContentType()).build());
+
+        String url = String.join("/", minioProperties.getEndpoint(), minioProperties.getBucketName(), filename);
+        return url;
+
+    }
+
+    private String createBucketPolicyConfig(String bucketName) {
+
+        return """
+                {
+                  "Statement" : [ {
+                    "Action" : "s3:GetObject",
+                    "Effect" : "Allow",
+                    "Principal" : "*",
+                    "Resource" : "arn:aws:s3:::%s/*"
+                  } ],
+                  "Version" : "2012-10-17"
+                }
+                """.formatted(bucketName);
+    }
+}
+```
+
+教學在這裡對 Exception 的處理只是使用`@ControllerAdvice`去 `return Result.fail();`
+
+```java
+package com.atguigu.lease.common.exception;
+
+import com.atguigu.lease.common.result.Result;
+import org.springframework.web.bind.annotation.ControllerAdvice;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseBody;
+
+/**
+ * ClassName: GlobalExceptionHandler
+ * Package: com.atguigu.lease.common.exception
+ */
+@ControllerAdvice
+public class GlobalExceptionHandler {
+
+    @ExceptionHandler(Exception.class)
+    @ResponseBody
+    public Result handle(Exception e) {
+        e.printStackTrace();
+        return Result.fail();
+    }
+}
+
+```
+
+### 9. 公寓管理
+
+實現的是下圖功能:
+
+<img src="img/Snipaste_2024-07-11_14-37-33.jpg" alt="error" style="width:70%"/>
+
+API 有:
+
+- 保存或更新公寓訊息(`/admin/apartment/saveOrUpdate`)
+- 根據條件分頁查詢公寓列表(`/admin/apartment/pageItem`)
+- 根據 ID 獲取公寓詳細訊息(`/admin/apartment/getDetailById`)
+- 根據 ID 刪除公寓訊息(`/admin/apartment/removeById`)
+- 根據 ID 修改公寓發布狀態(`/admin/apartment/updateReleaseStatusById`)
+- 根據區縣 ID 查詢公寓信息列表(`/admin/apartment/listInfoByDistrictId`)
+
+#### 保存或更新公寓訊息(`/admin/apartment/saveOrUpdate`)
+
+這個 API 是在「新增公寓」、「修改」時的頁面點擊保存時觸發的
+
+<img src="img/Snipaste_2024-07-11_14-38-43.jpg" alt="error"/>
+
+先複習一下公寓Table 與雜費、標籤等等Table的關係:
+
+能看到公寓Table 與雜費、標籤等是以中間表的方式關聯者。
+
+<img src="img/Snipaste_2024-07-11_14-40-55.jpg" alt="error" style="width:70%"/>
+
+另外，教學中是把公寓所屬的雜費、標籤、配套、圖片等訊息都刪除，再更新一筆新的進去，
+而非在前端編寫邏輯判斷新插入的數據為哪些。
+
+#### 根據條件分頁查詢公寓列表(`/admin/apartment/pageItem`)
+
+這個 API 涉及到分頁插件的使用，以及在`mapper.xml`自訂 SQL 時使用到 Mybatis 的`<where>`、`<if>`標籤及 SQL 語句稍微複雜一點，直接去看 Code 複習快點。
+
+#### 根據 ID 獲取公寓詳細訊息(`/admin/apartment/getDetailById`)
+
+每個 sql 都是自訂的，除此外沒特別的點，可以去程式看一下 sql 的邏輯。
+
+#### 根據 ID 刪除公寓訊息(`/admin/apartment/removeById`)
