@@ -1341,3 +1341,21 @@ API 有:
 每個 sql 都是自訂的，除此外沒特別的點，可以去程式看一下 sql 的邏輯。
 
 #### 根據 ID 刪除公寓訊息(`/admin/apartment/removeById`)
+
+教學新增了一個先判斷公寓底下是否有房間的判斷，並且延伸創建了`LeaseException`及一些全局異常處理的設定，這部分的業務邏輯我沒做，只有實作異常相關處理。
+
+#### 根據 ID 修改公寓發布狀態(`/admin/apartment/updateReleaseStatusById`)
+
+無
+
+#### 根據區縣 ID 查詢公寓信息列表(`/admin/apartment/listInfoByDistrictId`)
+
+無
+
+### 房間管理
+
+實現的是下圖功能:
+
+<img src="img/Snipaste_2024-07-11_14-37-33.jpg" alt="error" style="width:70%"/>
+
+API 有:
