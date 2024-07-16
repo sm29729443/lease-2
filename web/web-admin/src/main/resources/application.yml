@@ -17,7 +17,11 @@ spring:
       maximum-pool-size: 12 #連接池的最大連接數量，默認 10
       minimum-idle: 10 #最小空閒連接數，也就是連接池中隨時都備者10個連接供使用
       pool-name: SPHHikariPool # 連接池名稱
-
+  data:
+    redis:
+      host: 192.168.246.100
+      port: 6379
+      database: 0
 #打印 sql 語句的配置
 mybatis-plus:
   configuration:
