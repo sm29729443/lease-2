@@ -9,7 +9,7 @@
                url
         FROM graph_info
         WHERE is_deleted = 0
-          AND item_type = 1
+          AND item_type = #{itemType}
           AND item_id = #{id}
     </select>
 </mapper>

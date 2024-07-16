@@ -2,6 +2,7 @@ package com.atguigu.lease.web.admin.vo.room;
 
 import com.atguigu.lease.model.entity.ApartmentInfo;
 import com.atguigu.lease.model.entity.RoomInfo;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
@@ -13,6 +14,7 @@ import java.util.Date;
 public class RoomItemVo extends RoomInfo {
 
     @Schema(description = "租约结束日期")
+    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss.S", timezone = "GMT+8")
     private Date leaseEndDate;
 
     @Schema(description = "当前入住状态")

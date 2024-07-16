@@ -15,4 +15,7 @@ import com.baomidou.mybatisplus.extension.service.IService;
 */
 public interface RoomInfoService extends IService<RoomInfo> {
 
+    void saveOrUpdateRoomInfo(RoomSubmitVo roomSubmitVo);
+
+    IPage<RoomItemVo> pageItem(IPage<RoomItemVo> page, RoomQueryVo queryVo);
 }

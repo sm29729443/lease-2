@@ -1352,10 +1352,159 @@ API 有:
 
 無
 
-### 房間管理
+### 10. 房間管理
 
-實現的是下圖功能:
+這邊的實現邏輯跟公寓管理基本一樣，只記錄自己實作後不熟的部分。
 
-<img src="img/Snipaste_2024-07-11_14-37-33.jpg" alt="error" style="width:70%"/>
+從這節開始，只記錄新知識點，剩餘的 API 業務邏輯看起來都跟之前的差不多了。
 
-API 有:
+### 11. 登入管理前置知識
+
+以下見紹兩種常見的帳號登入認證方案。
+
+#### 1. session
+
+流程:
+
+- 因為 session 是把數據存放在後端，因此若後端只有一台 server 則容易負載大。
+- 但對於多台 server 的架構而言，session 的處理又顯得麻煩，通常會將 session 統一儲存在 redis 這種快取資料庫做管理。
+
+<img src="img/Snipaste_2024-07-16_12-14-40.jpg" alt="error" style="width:70%"/>
+
+#### 2. Token
+
+流程:
+
+- 因為 Token 是儲存在客戶端，因此後端 server 不會有負載過大的問題。
+- 因為 Token 的認證方式是客戶端攜帶 Token 去進行認證，因此對於後端多台 sever 的架構而言，也不像 session 會需要額外做登入狀態的共享處理。
+
+<img src="img/Snipaste_2024-07-16_12-37-44.jpg" alt="error" style="width:70%"/>
+
+#### JWT
+
+JWT(JSON Web TOKEN) 就是一種採 Token 認證的登入驗證方案。
+
+JWT 的組成:
+
+JWT 主要由 Header、Payload、Signature 三個部分經編碼後而組成的一個字串。
+
+Header:
+
+Header 部分是一個 JSON 物件，這個 JSON 物件主要保存的是 TOKEN 的類型、Signature 的加密算法類型。
+
+JWT 會將 Header 經由 base64 編碼成一個字串，而 base64 是可以解碼的一種編碼。
+example:
+
+```json
+{
+    "alg":"HS256", // alg:signature 的加密算法類型
+    "typ":"JWT" // Token 的類型
+}
+```
+
+Payload:
+
+Payload 也被稱為 Claims(聲明)，也是一個 JSON 物件，JWT規範了7個官方字段，但並不強迫使用:
+
+JWT 會將 Payload 經由 base64 編碼成一個字串。
+
+這裡比較常使用到的只有 exp。
+
+```json
+{
+    "iss": "jwt 簽發者",
+    "exp": "jwt 的過期時間",
+    "sub": "主題",
+    "aud": "接收 jwt 的一方",
+    "nbf": "jwt 的生效時間",
+    "iat": "jwt 簽發時間",
+    "jti": "jwt 的 id"
+}
+```
+
+而除了 jwt 規範的7個字段外，也能儲存自定義的字段，譬如一些 user 等不敏感的資訊，因為 base64 是可解碼的，因此不可能儲存像密碼等這種資訊。
+
+Signature(簽名):
+
+Signature 是由 Header、Payload、secret 組成在一起且經由加密算法(header alg 指定的算法)加密而成的一個字串，用於防止消息被竄改。
+
+這個 secret 實際上就是一個儲存在後端的字串，因此是絕不能外洩的，一旦外洩，就可以拿者 Header、Payload、secret 經由加密算法去仿造 Signature。
+
+官方網站有提供工具可以看到生成的 JWT 格式:`https://jwt.io/`。
+
+<img src="img/Snipaste_2024-07-16_13-13-33.jpg" alt="error" style="width:70%"/>
+
+### 12. 登入管理
+
+登入流程:
+
+<img src="img/Snipaste_2024-07-16_13-18-21.jpg" alt="error" style="width:75%"/>
+
+要實現的 API 有:
+
+- 獲取圖形驗證碼(`/admin/login/captcha`)
+- 登入(`/admin/login`)
+- 獲取登入用戶個人信息(`/admin/info`)
+
+#### 1. 獲取圖形驗證碼(`/admin/login/captcha`)
+
+這個 API 會 return 圖形驗證碼及驗證碼key(UUID)。
+
+而這個圖形驗證碼是一個經 base64 編碼的字串。
+
+```java
+@Data
+@Schema(description = "图像验证码")
+@AllArgsConstructor
+public class CaptchaVo {
+
+    @Schema(description="验证码图片信息")
+    private String image;
+
+    @Schema(description="验证码key")
+    private String key;
+}
+```
+
+此教學是使用一個開源的驗證碼生成工具 EasyCaptcha。
+
+EasyCaptcha 官方文檔:`https://gitee.com/ele-admin/EasyCaptcha`。
+
+首先在 common module 導入 EasyCaptcha及 redis dependency。
+
+```xml
+<dependency>
+    <groupId>com.github.whvcse</groupId>
+    <artifactId>easy-captcha</artifactId>
+</dependency>
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+</dependency>
+```
+
+`application.yml`配置 redis 相關:
+
+```yml
+spring:
+  data:
+    redis:
+      host: <hostname>
+      port: <port>
+      database: 0
+```
+
+接下來就能開始寫 API，以下為核心邏輯:
+
+```java
+    @Override
+    public CaptchaVo getCaptcha() {
+        SpecCaptcha specCaptcha = new SpecCaptcha(130, 48, 5);
+        // 將驗證碼轉小寫，到時候前端輸入的也會轉小寫
+        String code = specCaptcha.text().toLowerCase();
+        String key = "admin:login:" + UUID.randomUUID();
+        // 將驗證碼的key、value 放到 reids
+        stringRedisTemplate.opsForValue().set(key, code, 60, TimeUnit.SECONDS);
+        return new CaptchaVo(specCaptcha.toBase64(), key);
+    }
+```
