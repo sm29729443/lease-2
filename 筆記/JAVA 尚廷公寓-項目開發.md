@@ -1508,3 +1508,187 @@ spring:
         return new CaptchaVo(specCaptcha.toBase64(), key);
     }
 ```
+
+#### 2. 登入(`/admin/login`)
+
+登入校驗邏輯:
+
+1. 前端發送`username`、`password`、`captchaKey`、`captchaCode`給後端。
+2. 後端首先進行驗證碼相關邏輯驗證。
+3. 若驗證碼驗證通過，則進行帳號驗證。
+4. 若帳號驗證通過，則進行密碼驗證。
+5. 返回 JWT 給前端。
+
+1~4 的業務邏輯不說明，只說明怎麼在 JAVA 中去創建 JWT。
+
+在 common module 導入 JAVA-JWT 相關依賴
+
+```xml
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <scope>runtime</scope>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <scope>runtime</scope>
+</dependency>
+```
+
+創建 JWT 工具類
+
+```java
+public class JwtUtil {
+    private static SecretKey secretKey = Keys.hmacShaKeyFor("iswakrypuxqjtgjmbaghvfwrmaitucyx".getBytes());
+    public static String createToken(Long userId, String username) {
+        // 這裡設定的是 Payload，Header 通常不需要設定，但也可以自己設定
+        String jwt = Jwts.builder()
+                .setExpiration(new Date(System.currentTimeMillis() + 3600000))
+                .setSubject("LOGIN_USER")
+                .claim("userId", userId)
+                .claim("username", username)
+                .signWith(secretKey, SignatureAlgorithm.HS256)
+                .compact();
+        return jwt;
+    }
+
+    public static void main(String[] args) {
+        System.out.println(JwtUtil.createToken(1L,"QQA"));
+    }
+}
+```
+
+而 API 裡只要在所有驗證都通過後，調用`JwtUtil.createToken`去創建JWT字串即可。
+
+#### 3. 為登入後才能使用的 API 設定 Interceptor
+
+首先在`JwtUtil`編寫解析 Token 的方法
+
+```java
+    // 解析這個 Token 是否合法，發生異常就代表非法
+    public static void parseToken(String token) {
+        try {
+            JwtParser jwtParser = Jwts.parserBuilder()
+                    .setSigningKey(secretKey)
+                    .build();
+            // 如果 parseClaimsJws 拋出 Exception 代表非法
+            Jws<Claims> claimsJws = jwtParser.parseClaimsJws(token);
+        } catch (ExpiredJwtException e) {
+            throw new LeaseException(ResultCodeEnum.TOKEN_EXPIRED);
+        } catch (JwtException e) {
+            throw new LeaseException(ResultCodeEnum.TOKEN_INVALID);
+        }
+    }
+```
+
+創建 Interceptor
+
+```java
+public class AuthenticationInterceptor implements HandlerInterceptor {
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        String token = request.getHeader("access-token");
+        if (token == null) {
+            throw new LeaseException(ResultCodeEnum.ADMIN_LOGIN_AUTH);
+        }
+        // 如果 parseToken 沒有拋出 exception 代表合法
+        JwtUtil.parseToken(token);
+        return true;
+    }
+}
+```
+
+#### 4. 獲取登入用戶個人信息(`/admin/info`)
+
+這裡主要是使用到了`ThreadLocal`，因此紀錄一下。
+
+一開始的 API 程式碼是:
+
+```java
+    @Operation(summary = "獲取登入用戶個人信息")
+    @GetMapping("info")
+    public Result<SystemUserInfoVo> info(@RequestHeader("access-token") String token) {
+        Claims claims = JwtUtil.parseToken(token);
+        Long userId = claims.get("userId", Long.class);
+        SystemUserInfoVo systemUserInfoVo = loginService.getLoginUserInfo(userId);
+        return Result.ok(systemUserInfoVo);
+    }
+```
+
+但這樣子會 parse 兩次，一次在攔截器那，一次在這，因此可以使用`ThreadLocal`將攔截器那就獲得到的`claims`傳遞給此 API 即可。
+
+首先創建`ThreadLocal`工具類
+
+```java
+package com.atguigu.lease.common.login;
+
+public class LoginUserHolder {
+    public static ThreadLocal<LoginUser> threadLocal = new ThreadLocal<>();
+
+    public static void setLoginUser(LoginUser loginUser) {
+        threadLocal.set(loginUser);
+    }
+
+    public static LoginUser getLoginUser() {
+        return threadLocal.get();
+    }
+
+    public static void clear() {
+        threadLocal.remove();
+    }
+}
+```
+
+LoginUser:
+
+```java
+@Data
+@AllArgsConstructor
+public class LoginUser {
+
+    private Long userId;
+    private String username;
+}
+```
+
+之後修改攔截器程式:
+
+```java
+@Component
+public class AuthenticationInterceptor implements HandlerInterceptor {
+    @Override
+    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+        String token = request.getHeader("access-token");
+        if (token == null) {
+            throw new LeaseException(ResultCodeEnum.ADMIN_LOGIN_AUTH);
+        }
+        // 如果 parseToken 沒有拋出 exception 代表合法
+        Claims claims = JwtUtil.parseToken(token);
+        
+        // 將 Token 裡保存的使用者訊息放到 ThreadLoad
+        Long userId = claims.get("userId", Long.class);
+        String username = claims.get("username", String.class);
+        LoginUserHolder.setLoginUser(new LoginUser(userId, username));
+        return true;
+    }
+}
+```
+
+另外，因為 spring MVC 有使用到線程池，也就是當請求結束時，並不會銷毀線程，而是將此線程放回到線程池中，因此為了不影響到下個請求，要將放進去的資料給清除掉。
+
+因此要在`interceptor`透過`afterCompletion`清除資料。
+
+```java
+    @Override
+    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+        // 當請求結束時，清除 ThreadLocal
+        LoginUserHolder.clear();
+    }
+```

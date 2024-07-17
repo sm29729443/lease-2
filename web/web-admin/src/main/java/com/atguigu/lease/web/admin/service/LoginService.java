@@ -8,4 +8,7 @@ public interface LoginService {
 
     CaptchaVo getCaptcha();
 
+    String login(LoginVo loginVo);
+
+    SystemUserInfoVo getLoginUserInfo(Long userId);
 }
